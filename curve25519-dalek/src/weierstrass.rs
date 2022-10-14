@@ -1,4 +1,4 @@
-use core::ops::{Add, AddAssign, BitAndAssign, Mul};
+use core::ops::{Add, AddAssign, BitAndAssign, Mul, MulAssign};
 
 use field::FieldElement;
 use scalar::Scalar;
@@ -127,6 +127,11 @@ impl AddAssign for WeierstrassPoint {
     }
 }
 
+define_mul_assign_variants!(LHS = WeierstrassPoint, RHS = Scalar);
+
+define_mul_variants!(LHS = WeierstrassPoint, RHS = Scalar, Output = WeierstrassPoint);
+define_mul_variants!(LHS = Scalar, RHS = WeierstrassPoint, Output = WeierstrassPoint);
+
 impl<'a, 'b> Mul<&'b Scalar> for &'a WeierstrassPoint {
     type Output = WeierstrassPoint;
 
@@ -149,5 +154,19 @@ impl<'a, 'b> Mul<&'b Scalar> for &'a WeierstrassPoint {
         }
 
         acc
+    }
+}
+
+impl<'b> MulAssign<&'b Scalar> for WeierstrassPoint {
+    fn mul_assign(&mut self, scalar: &'b Scalar) {
+        *self = *self * scalar;
+    }
+}
+
+impl<'a, 'b> Mul<&'b WeierstrassPoint> for &'a Scalar {
+    type Output = WeierstrassPoint;
+
+    fn mul(self, point: &'b WeierstrassPoint) -> WeierstrassPoint {
+        *point * self
     }
 }
