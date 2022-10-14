@@ -1,16 +1,63 @@
 use core::ops::{Add, AddAssign, BitAndAssign};
 
 use field::FieldElement;
+
 use subtle::Choice;
 use subtle::ConditionallySelectable;
 use subtle::ConstantTimeEq;
 
+/// 'a' parameter for Wei25519 for the short-Weierstrass formula
+/// https://datatracker.ietf.org/doc/html/draft-ietf-lwig-curve-representations-23#appendix-E.3
+/// 19298681539552699237261830834781317975544997444273427339909597334573241639236
+const WEI25519_A: [u8; 32] = [
+    0x2A, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0x98, 0x49, 0x14, 0xA1, 0x44,
+];
+
+const THREE: [u8; 32] = [
+    3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
 /// Holds the u-coordinate and v-coordinate of a point on the on the Weierstrass form of Curve25519.
+/// 
+/// Note: all bytes are in Montgomery convention order
 #[derive(Copy, Clone, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WeierstrassPoint {
     pub x: [u8; 32],
     pub y: [u8; 32],
+}
+
+impl WeierstrassPoint {
+    pub fn zero() -> WeierstrassPoint {
+        WeierstrassPoint {
+            x: [0; 32],
+            y: [0; 32],
+        }
+    }
+
+    pub fn double(&self) -> WeierstrassPoint {
+        // Non-jacobian short-Weierstrass affine doubling (https://www.hyperelliptic.org/EFD/g1p/auto-shortw.html)
+        // x3 = (3*x1^2+a)^2/(2*y1)^2-x1-x1
+        // y3 = (2*x1+x1)*(3*x1^2+a)/(2*y1)-(3*x1^2+a)^3/(2*y1)^3-y1
+        //
+        // Modification:
+        // u = (3*x1^2+a)/(2*y1)
+        // x3 = u^2-2x1
+        // y3 = u*(x1-x3)-y1
+        let x1 = FieldElement::from_bytes(&self.x);
+        let y1 = FieldElement::from_bytes(&self.y);
+
+        let three = FieldElement::from_bytes(&THREE);
+        let a = FieldElement::from_bytes(&WEI25519_A);
+        let u = &(&(&three * &x1.square()) + &a) * &(&y1 + &y1).invert();
+        let x3 = &u.square() - &(&x1 + &x1);
+        let y3 = &(&u * &(&x1 - &x3)) - &y1;
+
+        WeierstrassPoint {
+            x: x3.to_bytes(),
+            y: y3.to_bytes(),
+        }
+    }
 }
 
 impl ConstantTimeEq for WeierstrassPoint {
@@ -44,10 +91,14 @@ impl ConditionallySelectable for WeierstrassPoint {
 }
 
 impl Add for WeierstrassPoint {
-    type Output = Self;
+    type Output = WeierstrassPoint;
 
     fn add(self, rhs: Self) -> Self::Output {
         // Non-jacobian short-Weierstrass affine addition (https://www.hyperelliptic.org/EFD/g1p/auto-shortw.html)
+        // x3 = (y2-y1)^2/(x2-x1)^2-x1-x2
+        // y3 = (2*x1+x2)*(y2-y1)/(x2-x1)-(y2-y1)^3/(x2-x1)^3-y1
+        //
+        // Modification:
         // u = (y2-y1)/(x2-x1)
         // x3 = u^2-x1-x2
         // y3 = u*(x1-x3)-y1
