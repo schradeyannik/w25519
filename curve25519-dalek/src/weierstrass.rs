@@ -1,4 +1,4 @@
-use core::ops::{Add, BitAndAssign};
+use core::ops::{Add, AddAssign, BitAndAssign};
 
 use field::FieldElement;
 use subtle::Choice;
@@ -66,5 +66,11 @@ impl Add for WeierstrassPoint {
             x: x3.to_bytes(),
             y: y3.to_bytes(),
         }
+    }
+}
+
+impl AddAssign for WeierstrassPoint {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
     }
 }
