@@ -210,21 +210,25 @@ impl<'a, 'b> Mul<&'b WeierstrassPoint> for &'a Scalar {
 #[cfg(test)]
 mod test {
     #[test]
+    #[ignore]
     fn basepoint_montgomery_to_weierstrass() {
         todo!()
     }
 
     #[test]
+    #[ignore]
     fn basepoint_weierstrass_to_edwards() {
         todo!()
     }
 
     #[test]
+    #[ignore]
     fn eq_defined_mod_p() {
         todo!()
     }
 
     #[test]
+    #[ignore]
     fn scalar_mul_matches_montgomery_ladder() {
         todo!()
     }
