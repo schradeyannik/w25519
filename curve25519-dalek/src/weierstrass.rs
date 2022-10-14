@@ -1,12 +1,13 @@
-use core::ops::{Add, AddAssign, BitAndAssign};
+use core::ops::{Add, AddAssign, BitAndAssign, Mul};
 
 use field::FieldElement;
+use scalar::Scalar;
 
 use subtle::Choice;
 use subtle::ConditionallySelectable;
 use subtle::ConstantTimeEq;
 
-/// 'a' parameter for Wei25519 for the short-Weierstrass formula
+/// 'a' parameter for Wei25519
 /// https://datatracker.ietf.org/doc/html/draft-ietf-lwig-curve-representations-23#appendix-E.3
 /// 19298681539552699237261830834781317975544997444273427339909597334573241639236
 const WEI25519_A: [u8; 32] = [
@@ -93,7 +94,7 @@ impl ConditionallySelectable for WeierstrassPoint {
 impl Add for WeierstrassPoint {
     type Output = WeierstrassPoint;
 
-    fn add(self, rhs: Self) -> Self::Output {
+    fn add(self, rhs: Self) -> WeierstrassPoint {
         // Non-jacobian short-Weierstrass affine addition (https://www.hyperelliptic.org/EFD/g1p/auto-shortw.html)
         // x3 = (y2-y1)^2/(x2-x1)^2-x1-x2
         // y3 = (2*x1+x2)*(y2-y1)/(x2-x1)-(y2-y1)^3/(x2-x1)^3-y1
@@ -123,5 +124,30 @@ impl Add for WeierstrassPoint {
 impl AddAssign for WeierstrassPoint {
     fn add_assign(&mut self, rhs: Self) {
         *self = *self + rhs;
+    }
+}
+
+impl<'a, 'b> Mul<&'b Scalar> for &'a WeierstrassPoint {
+    type Output = WeierstrassPoint;
+
+    fn mul(self, scalar: &'b Scalar) -> WeierstrassPoint {
+        let mut acc = WeierstrassPoint::zero();
+        let mut p = *self;
+
+        let bits: [i8; 256] = scalar.bits();
+
+        for i in (0..255).rev() {
+            let choice: u8 = (bits[i + 1] ^ bits[i]) as u8;
+            let mut a = WeierstrassPoint::zero();
+
+            debug_assert!(choice == 0 || choice == 1);
+
+            a.conditional_assign(&p, choice.into());
+            acc += a;
+
+            p = p.double();
+        }
+
+        acc
     }
 }
