@@ -7,6 +7,8 @@ use subtle::Choice;
 use subtle::ConditionallySelectable;
 use subtle::ConstantTimeEq;
 
+use montgomery::MontgomeryPoint;
+
 /// 'a' parameter for Wei25519
 /// https://datatracker.ietf.org/doc/html/draft-ietf-lwig-curve-representations-23#appendix-E.3
 /// 19298681539552699237261830834781317975544997444273427339909597334573241639236
@@ -18,11 +20,10 @@ const THREE: [u8; 32] = [
     3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-/// Holds the u-coordinate and v-coordinate of a point on the on the Weierstrass form of Curve25519.
+/// Holds the u-coordinate and v-coordinate of a point on the Weierstrass form of Curve25519.
 /// 
 /// Note: all bytes are in Montgomery convention order
 #[derive(Copy, Clone, Debug, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WeierstrassPoint {
     pub x: [u8; 32],
     pub y: [u8; 32],
@@ -34,6 +35,41 @@ impl WeierstrassPoint {
             x: [0; 32],
             y: [0; 32],
         }
+    }
+
+    /// Convert a point (u, v) on the Montgomery form of Curve25519 as `WeierstrassPoint`
+    pub fn from_montgomery(u: [u8; 32], v: [u8; 32]) -> WeierstrassPoint {
+        // https://datatracker.ietf.org/doc/html/draft-ietf-lwig-curve-representations-23#appendix-D.2
+        // (u, v)_M => ((u + A/3)/B, v/B)_W
+
+        let u = FieldElement::from_bytes(&u);
+        let three = FieldElement::from_bytes(&THREE);
+        let a = FieldElement::from_bytes(&WEI25519_A);
+        let x = &u + &(&a * &three.invert());
+
+        WeierstrassPoint {
+            x: x.to_bytes(),
+            y: v,
+        }
+    }
+
+    /// Convert this `WeierstrassPoint` to a point (u, v) on the Montgomery form of Curve25519
+    pub fn into_montgomery(&self) -> ([u8; 32], [u8; 32]) {
+        // Inverse mapping: https://datatracker.ietf.org/doc/html/draft-ietf-lwig-curve-representations-23#appendix-E.2
+        // (x, y)_W = (x - A/3, y)_M
+
+        let x = FieldElement::from_bytes(&self.x);
+        let three = FieldElement::from_bytes(&THREE);
+        let a = FieldElement::from_bytes(&WEI25519_A);
+        let u = &x - &(&a * &three.invert());
+
+        (u.to_bytes(), self.y)
+    }
+
+    /// Convert this `WeierstrassPoint` into a `MontgomeryPoint`
+    pub fn into_montgomery_compressed(&self) -> MontgomeryPoint {
+        let (u, _) = self.into_montgomery();
+        MontgomeryPoint(u)
     }
 
     pub fn double(&self) -> WeierstrassPoint {
@@ -168,5 +204,28 @@ impl<'a, 'b> Mul<&'b WeierstrassPoint> for &'a Scalar {
 
     fn mul(self, point: &'b WeierstrassPoint) -> WeierstrassPoint {
         *point * self
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn basepoint_montgomery_to_weierstrass() {
+        todo!()
+    }
+
+    #[test]
+    fn basepoint_weierstrass_to_edwards() {
+        todo!()
+    }
+
+    #[test]
+    fn eq_defined_mod_p() {
+        todo!()
+    }
+
+    #[test]
+    fn scalar_mul_matches_montgomery_ladder() {
+        todo!()
     }
 }
