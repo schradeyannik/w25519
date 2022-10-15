@@ -9,16 +9,29 @@ use subtle::ConstantTimeEq;
 
 use montgomery::MontgomeryPoint;
 
-/// 'a' parameter for Wei25519
-/// https://datatracker.ietf.org/doc/html/draft-ietf-lwig-curve-representations-23#appendix-E.3
-/// 19298681539552699237261830834781317975544997444273427339909597334573241639236
+// 'a' parameter for Wei25519 in little-endian
+// https://datatracker.ietf.org/doc/html/draft-ietf-lwig-curve-representations-23#appendix-E.3
 const WEI25519_A: [u8; 32] = [
-    0x2A, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0x98, 0x49, 0x14, 0xA1, 0x44,
+    0x44, 0xa1, 0x14, 0x49, 0x98, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0x2a,
 ];
 
-const THREE: [u8; 32] = [
-    3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+/// https://datatracker.ietf.org/doc/html/draft-ietf-lwig-curve-representations-23#appendix-E.2
+const DELTA: [u8; 32] = [
+    0x51, 0x24, 0xad, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0x2a,
 ];
+
+pub const X25519_BASEPOINT_U: [u8; 32] = crate::constants::X25519_BASEPOINT.0;
+
+/// v-coordinate for the X22159 base point on the Montgomery form of Curve25519
+/// https://www.rfc-editor.org/rfc/rfc7748#section-4.1
+pub const X25519_BASEPOINT_V: [u8; 32] = [
+    0xd9, 0xd3, 0xce, 0x7e, 0xa2, 0xc5, 0xe9, 0x29, 0xb2, 0x61, 0x7c, 0x6d, 0x7e, 0x4d, 0x3d, 0x92, 0x4c, 0xd1, 0x48, 0x77, 0x2c, 0xdd, 0x1e, 0xe0, 0xb4, 0x86, 0xa0, 0xb8, 0xa1, 0x19, 0xae, 0x20,
+];
+
+pub const WEI_25519_G_X: [u8; 32] = [
+    0x5a, 0x24, 0xad, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0x2a,
+];
+pub const WEI_25519_G_Y: [u8; 32] = X25519_BASEPOINT_V;
 
 /// Holds the u-coordinate and v-coordinate of a point on the Weierstrass form of Curve25519.
 /// 
@@ -29,23 +42,38 @@ pub struct WeierstrassPoint {
     pub y: [u8; 32],
 }
 
-impl WeierstrassPoint {
-    pub fn zero() -> WeierstrassPoint {
+impl Default for WeierstrassPoint {
+    fn default() -> Self {
         WeierstrassPoint {
             x: [0; 32],
             y: [0; 32],
         }
     }
+}
 
+fn rev(a: &[u8; 32]) -> [u8; 32] {
+    let mut b = [0; 32];
+    for i in 0..32 {
+        b[31 - i] = a[i];
+    }
+    b
+}
+
+impl PartialEq for WeierstrassPoint {
+    fn eq(&self, other: &WeierstrassPoint) -> bool {
+        self.ct_eq(other).unwrap_u8() == 1u8
+    }
+}
+
+impl WeierstrassPoint {
     /// Convert a point (u, v) on the Montgomery form of Curve25519 as `WeierstrassPoint`
     pub fn from_montgomery(u: [u8; 32], v: [u8; 32]) -> WeierstrassPoint {
         // https://datatracker.ietf.org/doc/html/draft-ietf-lwig-curve-representations-23#appendix-D.2
         // (u, v)_M => ((u + A/3)/B, v/B)_W
 
         let u = FieldElement::from_bytes(&u);
-        let three = FieldElement::from_bytes(&THREE);
-        let a = FieldElement::from_bytes(&WEI25519_A);
-        let x = &u + &(&a * &three.invert());
+        let delta = FieldElement::from_bytes(&DELTA);
+        let x = &u + &delta;
 
         WeierstrassPoint {
             x: x.to_bytes(),
@@ -59,9 +87,8 @@ impl WeierstrassPoint {
         // (x, y)_W = (x - A/3, y)_M
 
         let x = FieldElement::from_bytes(&self.x);
-        let three = FieldElement::from_bytes(&THREE);
-        let a = FieldElement::from_bytes(&WEI25519_A);
-        let u = &x - &(&a * &three.invert());
+        let delta = FieldElement::from_bytes(&DELTA);
+        let u = &x - &delta;
 
         (u.to_bytes(), self.y)
     }
@@ -84,9 +111,10 @@ impl WeierstrassPoint {
         let x1 = FieldElement::from_bytes(&self.x);
         let y1 = FieldElement::from_bytes(&self.y);
 
-        let three = FieldElement::from_bytes(&THREE);
+        let x1s = x1.square();
+        let x1s3 = &(&x1s + &x1s) + &x1s;
         let a = FieldElement::from_bytes(&WEI25519_A);
-        let u = &(&(&three * &x1.square()) + &a) * &(&y1 + &y1).invert();
+        let u = &(&x1s3 + &a) * &(&y1 + &y1).invert();
         let x3 = &u.square() - &(&x1 + &x1);
         let y3 = &(&u * &(&x1 - &x3)) - &y1;
 
@@ -172,14 +200,14 @@ impl<'a, 'b> Mul<&'b Scalar> for &'a WeierstrassPoint {
     type Output = WeierstrassPoint;
 
     fn mul(self, scalar: &'b Scalar) -> WeierstrassPoint {
-        let mut acc = WeierstrassPoint::zero();
+        let mut acc = WeierstrassPoint::default();
         let mut p = *self;
 
         let bits: [i8; 256] = scalar.bits();
 
         for i in (0..255).rev() {
             let choice: u8 = (bits[i + 1] ^ bits[i]) as u8;
-            let mut a = WeierstrassPoint::zero();
+            let mut a = WeierstrassPoint::default();
 
             debug_assert!(choice == 0 || choice == 1);
 
@@ -209,16 +237,49 @@ impl<'a, 'b> Mul<&'b WeierstrassPoint> for &'a Scalar {
 
 #[cfg(test)]
 mod test {
+    use super::*;
+
     #[test]
-    #[ignore]
-    fn basepoint_montgomery_to_weierstrass() {
-        todo!()
+    fn test_delta() {
+        // https://datatracker.ietf.org/doc/html/draft-ietf-lwig-curve-representations-23#appendix-E.2
+        // delta:=(p+A)/3
+
+        let three = FieldElement::from_bytes(&[
+            3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ]);
+
+        // A_M := 486662 = 0x076d06
+        let a = FieldElement::from_bytes(&[
+            0x06, 0x6d, 0x07, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ]);
+
+        let delta = &(&a * &three.invert());
+        assert_eq!(delta.to_bytes(), DELTA);
     }
 
     #[test]
-    #[ignore]
-    fn basepoint_weierstrass_to_edwards() {
-        todo!()
+    fn basepoint_montgomery_to_weierstrass() {
+        assert_eq!(
+            WeierstrassPoint::from_montgomery(X25519_BASEPOINT_U, X25519_BASEPOINT_V),
+            WeierstrassPoint {
+                x: WEI_25519_G_X,
+                y: WEI_25519_G_Y,
+            }
+        )
+    }
+
+    #[test]
+    fn basepoint_weierstrass_to_montgomery() {
+        assert_eq!(
+            WeierstrassPoint {
+                x: WEI_25519_G_X,
+                y: WEI_25519_G_Y,
+            }.into_montgomery(),
+            (
+                X25519_BASEPOINT_U,
+                X25519_BASEPOINT_V,
+            )
+        )
     }
 
     #[test]

@@ -3,8 +3,8 @@
 
 This crate extends the functionality of `curve25519-dalek` and `x25519-dalek` with the short-Weierstrass representation Curve25519 isomorphism [Wei25519](https://datatracker.ietf.org/doc/html/draft-ietf-lwig-curve-representations-23).
 
-### Usage
-Import `curve25519-dalek` from this workspace either with the `default` or `weierstrass` feature enabled.
+### Usage of Wei25519
+Import `curve25519-dalek` from this workspace either with the `default` or `weierstrass` feature.
 
 ### Dalek Cryptography Crates
 - `curve25519-dalek` [release 3.0.0](https://github.com/dalek-cryptography/curve25519-dalek/releases/tag/3.0.0)
