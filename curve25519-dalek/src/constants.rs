@@ -31,6 +31,9 @@ use edwards::CompressedEdwardsY;
 use ristretto::RistrettoPoint;
 use ristretto::CompressedRistretto;
 use montgomery::MontgomeryPoint;
+#[cfg(feature = "weierstrass")]
+use weierstrass::{WeierstrassPoint, WEI25519_G_X, WEI25519_G_Y};
+
 use scalar::Scalar;
 
 #[cfg(feature = "u64_backend")]
@@ -56,6 +59,12 @@ pub const X25519_BASEPOINT: MontgomeryPoint =
                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+
+#[cfg(feature = "weierstrass")]
+pub const WEI25519_BASEPOINT: WeierstrassPoint = WeierstrassPoint {
+    x: WEI25519_G_X,
+    y: WEI25519_G_Y,
+};
 
 /// The Ristretto basepoint, in `CompressedRistretto` format.
 pub const RISTRETTO_BASEPOINT_COMPRESSED: CompressedRistretto =

@@ -9,7 +9,11 @@ use subtle::ConstantTimeEq;
 
 use montgomery::MontgomeryPoint;
 
-// 'a' parameter for Wei25519 in little-endian
+const CURVE25519_A: [u8; 32] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+// 'a' parameter for Wei25519
 // https://datatracker.ietf.org/doc/html/draft-ietf-lwig-curve-representations-23#appendix-E.3
 const WEI25519_A: [u8; 32] = [
     0x44, 0xa1, 0x14, 0x49, 0x98, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0x2a,
@@ -28,10 +32,10 @@ pub const X25519_BASEPOINT_V: [u8; 32] = [
     0xd9, 0xd3, 0xce, 0x7e, 0xa2, 0xc5, 0xe9, 0x29, 0xb2, 0x61, 0x7c, 0x6d, 0x7e, 0x4d, 0x3d, 0x92, 0x4c, 0xd1, 0x48, 0x77, 0x2c, 0xdd, 0x1e, 0xe0, 0xb4, 0x86, 0xa0, 0xb8, 0xa1, 0x19, 0xae, 0x20,
 ];
 
-pub const WEI_25519_G_X: [u8; 32] = [
+pub const WEI25519_G_X: [u8; 32] = [
     0x5a, 0x24, 0xad, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0x2a,
 ];
-pub const WEI_25519_G_Y: [u8; 32] = X25519_BASEPOINT_V;
+pub const WEI25519_G_Y: [u8; 32] = X25519_BASEPOINT_V;
 
 /// Holds the u-coordinate and v-coordinate of a point on the Weierstrass form of Curve25519.
 /// 
@@ -51,14 +55,6 @@ impl Default for WeierstrassPoint {
     }
 }
 
-fn rev(a: &[u8; 32]) -> [u8; 32] {
-    let mut b = [0; 32];
-    for i in 0..32 {
-        b[31 - i] = a[i];
-    }
-    b
-}
-
 impl PartialEq for WeierstrassPoint {
     fn eq(&self, other: &WeierstrassPoint) -> bool {
         self.ct_eq(other).unwrap_u8() == 1u8
@@ -66,10 +62,36 @@ impl PartialEq for WeierstrassPoint {
 }
 
 impl WeierstrassPoint {
+    fn x_ct_eq(&self, other: &Self) -> Choice {
+        FieldElement::from_bytes(&self.x).ct_eq(&FieldElement::from_bytes(&other.x))
+    }
+
+    fn y_ct_eq(&self, other: &Self) -> Choice {
+        FieldElement::from_bytes(&self.y).ct_eq(&FieldElement::from_bytes(&other.y))
+    }
+
+    fn x_zero(&self) -> Choice {
+        FieldElement::from_bytes(&self.x).ct_eq(&FieldElement::zero())
+    }
+
+    fn y_zero(&self) -> Choice {
+        FieldElement::from_bytes(&self.y).ct_eq(&FieldElement::zero())
+    }
+
+    fn at_infinity(&self) -> Choice {
+        let mut choice = self.x_zero();
+        choice.bitand_assign(self.y_zero());
+        choice
+    }
+
     /// Convert a point (u, v) on the Montgomery form of Curve25519 as `WeierstrassPoint`
     pub fn from_montgomery(u: [u8; 32], v: [u8; 32]) -> WeierstrassPoint {
         // https://datatracker.ietf.org/doc/html/draft-ietf-lwig-curve-representations-23#appendix-D.2
         // (u, v)_M => ((u + A/3)/B, v/B)_W
+
+        if u == [0; 32] {
+            return WeierstrassPoint { x: [0; 32], y: v }
+        }
 
         let u = FieldElement::from_bytes(&u);
         let delta = FieldElement::from_bytes(&DELTA);
@@ -85,6 +107,10 @@ impl WeierstrassPoint {
     pub fn into_montgomery(&self) -> ([u8; 32], [u8; 32]) {
         // Inverse mapping: https://datatracker.ietf.org/doc/html/draft-ietf-lwig-curve-representations-23#appendix-E.2
         // (x, y)_W = (x - A/3, y)_M
+
+        if self.x == [0; 32] {
+            return (self.x, self.y)
+        }
 
         let x = FieldElement::from_bytes(&self.x);
         let delta = FieldElement::from_bytes(&DELTA);
@@ -108,6 +134,11 @@ impl WeierstrassPoint {
         // u = (3*x1^2+a)/(2*y1)
         // x3 = u^2-2x1
         // y3 = u*(x1-x3)-y1
+
+        if self.at_infinity().into() {
+            return *self
+        }
+
         let x1 = FieldElement::from_bytes(&self.x);
         let y1 = FieldElement::from_bytes(&self.y);
 
@@ -147,8 +178,8 @@ impl ConditionallySelectable for WeierstrassPoint {
                 choice,
             ).to_bytes(),
             y: FieldElement::conditional_select(
-                &FieldElement::from_bytes(&a.x),
-                &FieldElement::from_bytes(&b.x),
+                &FieldElement::from_bytes(&a.y),
+                &FieldElement::from_bytes(&b.y),
                 choice,
             ).to_bytes(),
         }
@@ -167,6 +198,20 @@ impl Add for WeierstrassPoint {
         // u = (y2-y1)/(x2-x1)
         // x3 = u^2-x1-x2
         // y3 = u*(x1-x3)-y1
+
+        if self.at_infinity().into() {
+            return rhs
+        } else if rhs.at_infinity().into() {
+            return self
+        }
+
+        if self.x_ct_eq(&rhs).into() {
+            if self.y_ct_eq(&rhs).into() {
+                return self.double()
+            } else {
+                return WeierstrassPoint::default()
+            }
+        }
 
         let x1 = FieldElement::from_bytes(&self.x);
         let y1 = FieldElement::from_bytes(&self.y);
@@ -199,14 +244,15 @@ define_mul_variants!(LHS = Scalar, RHS = WeierstrassPoint, Output = WeierstrassP
 impl<'a, 'b> Mul<&'b Scalar> for &'a WeierstrassPoint {
     type Output = WeierstrassPoint;
 
+    #[allow(clippy::needless_range_loop)]
     fn mul(self, scalar: &'b Scalar) -> WeierstrassPoint {
         let mut acc = WeierstrassPoint::default();
         let mut p = *self;
 
         let bits: [i8; 256] = scalar.bits();
 
-        for i in (0..255).rev() {
-            let choice: u8 = (bits[i + 1] ^ bits[i]) as u8;
+        for i in 0..255 {
+            let choice: u8 = bits[i] as u8;
             let mut a = WeierstrassPoint::default();
 
             debug_assert!(choice == 0 || choice == 1);
@@ -239,6 +285,8 @@ impl<'a, 'b> Mul<&'b WeierstrassPoint> for &'a Scalar {
 mod test {
     use super::*;
 
+    use rand_core::OsRng;
+
     #[test]
     fn test_delta() {
         // https://datatracker.ietf.org/doc/html/draft-ietf-lwig-curve-representations-23#appendix-E.2
@@ -262,8 +310,8 @@ mod test {
         assert_eq!(
             WeierstrassPoint::from_montgomery(X25519_BASEPOINT_U, X25519_BASEPOINT_V),
             WeierstrassPoint {
-                x: WEI_25519_G_X,
-                y: WEI_25519_G_Y,
+                x: WEI25519_G_X,
+                y: WEI25519_G_Y,
             }
         )
     }
@@ -272,8 +320,8 @@ mod test {
     fn basepoint_weierstrass_to_montgomery() {
         assert_eq!(
             WeierstrassPoint {
-                x: WEI_25519_G_X,
-                y: WEI_25519_G_Y,
+                x: WEI25519_G_X,
+                y: WEI25519_G_Y,
             }.into_montgomery(),
             (
                 X25519_BASEPOINT_U,
@@ -283,14 +331,61 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn eq_defined_mod_p() {
-        todo!()
+        let mut u18_bytes = [0u8; 32]; u18_bytes[0] = 18;
+
+        let u18 = WeierstrassPoint {
+            x: u18_bytes,
+            y: u18_bytes,
+        };
+        let u18_unred = WeierstrassPoint {
+            x: [255; 32],
+            y: [255; 32],
+        };
+
+        assert_eq!(u18, u18_unred);
     }
 
     #[test]
-    #[ignore]
-    fn scalar_mul_matches_montgomery_ladder() {
-        todo!()
+    fn test_map_point_at_infinity() {
+        let w = WeierstrassPoint::default();
+        assert_eq!(w.into_montgomery_compressed().0, [0; 32]);
+
+        assert_eq!(
+            WeierstrassPoint::from_montgomery([0; 32], [0; 32]),
+            WeierstrassPoint::default()
+        );
+    }
+
+    #[test]
+    fn scalar_mul_matches_montgomery_scalar_mul() {
+        let mut s: [u8; 32] = [0; 32]; s[0] = 3;
+        let scalar = Scalar::from_bits(s);
+
+        let m = crate::constants::X25519_BASEPOINT;
+        let w = crate::constants::WEI25519_BASEPOINT;
+
+        let a = m * scalar;
+        let b = w * scalar;
+        println!("{:?}", w.x);
+
+        assert_eq!(
+            WeierstrassPoint::from_montgomery(a.0, [0; 32]).x,
+            b.x,
+        );
+    }
+
+    #[test]
+    fn test_scalar() {
+        let mut csprng: OsRng = OsRng;
+
+        let s: Scalar = Scalar::random(&mut csprng);
+        let p_montgomery: MontgomeryPoint = crate::constants::X25519_BASEPOINT;
+        let p_weierstrass: WeierstrassPoint = crate::constants::WEI25519_BASEPOINT;
+
+        let result = s * p_weierstrass;
+        let expected = s * p_montgomery;
+
+        assert_eq!(result.into_montgomery_compressed(), expected);
     }
 }
