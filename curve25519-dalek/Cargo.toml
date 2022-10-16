@@ -50,9 +50,10 @@ zeroize = { version = "1", default-features = false }
 
 [features]
 nightly = ["subtle/nightly"]
-default = ["std", "u64_backend"]
+default = ["std", "u64_backend", "weierstrass"]
 std = ["alloc", "subtle/std", "rand_core/std"]
 alloc = ["zeroize/alloc"]
+weierstrass = []
 
 # The u32 backend uses u32s with u64 products.
 u32_backend = []
