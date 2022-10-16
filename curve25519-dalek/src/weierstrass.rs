@@ -9,10 +9,6 @@ use subtle::ConstantTimeEq;
 
 use montgomery::MontgomeryPoint;
 
-const CURVE25519_A: [u8; 32] = [
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-];
-
 // 'a' parameter for Wei25519
 // https://datatracker.ietf.org/doc/html/draft-ietf-lwig-curve-representations-23#appendix-E.3
 const WEI25519_A: [u8; 32] = [
@@ -63,24 +59,19 @@ impl PartialEq for WeierstrassPoint {
 
 impl WeierstrassPoint {
     fn x_ct_eq(&self, other: &Self) -> Choice {
-        FieldElement::from_bytes(&self.x).ct_eq(&FieldElement::from_bytes(&other.x))
+        FieldElement::from_bytes(&self.x)
+            .ct_eq(&FieldElement::from_bytes(&other.x))
     }
 
     fn y_ct_eq(&self, other: &Self) -> Choice {
-        FieldElement::from_bytes(&self.y).ct_eq(&FieldElement::from_bytes(&other.y))
-    }
-
-    fn x_zero(&self) -> Choice {
-        FieldElement::from_bytes(&self.x).ct_eq(&FieldElement::zero())
-    }
-
-    fn y_zero(&self) -> Choice {
-        FieldElement::from_bytes(&self.y).ct_eq(&FieldElement::zero())
+        FieldElement::from_bytes(&self.y)
+            .ct_eq(&FieldElement::from_bytes(&other.y))
     }
 
     fn at_infinity(&self) -> Choice {
-        let mut choice = self.x_zero();
-        choice.bitand_assign(self.y_zero());
+        let i = WeierstrassPoint::default();
+        let mut choice = self.x_ct_eq(&i);
+        choice.bitand_assign(self.y_ct_eq(&i));
         choice
     }
 
@@ -125,34 +116,9 @@ impl WeierstrassPoint {
         MontgomeryPoint(u)
     }
 
+    /// Constant time (non-jacobian) short-Weierstrass doubling
     pub fn double(&self) -> WeierstrassPoint {
-        // Non-jacobian short-Weierstrass affine doubling (https://www.hyperelliptic.org/EFD/g1p/auto-shortw.html)
-        // x3 = (3*x1^2+a)^2/(2*y1)^2-x1-x1
-        // y3 = (2*x1+x1)*(3*x1^2+a)/(2*y1)-(3*x1^2+a)^3/(2*y1)^3-y1
-        //
-        // Modification:
-        // u = (3*x1^2+a)/(2*y1)
-        // x3 = u^2-2x1
-        // y3 = u*(x1-x3)-y1
-
-        if self.at_infinity().into() {
-            return *self
-        }
-
-        let x1 = FieldElement::from_bytes(&self.x);
-        let y1 = FieldElement::from_bytes(&self.y);
-
-        let x1s = x1.square();
-        let x1s3 = &(&x1s + &x1s) + &x1s;
-        let a = FieldElement::from_bytes(&WEI25519_A);
-        let u = &(&x1s3 + &a) * &(&y1 + &y1).invert();
-        let x3 = &u.square() - &(&x1 + &x1);
-        let y3 = &(&u * &(&x1 - &x3)) - &y1;
-
-        WeierstrassPoint {
-            x: x3.to_bytes(),
-            y: y3.to_bytes(),
-        }
+        *self + *self
     }
 }
 
@@ -189,29 +155,10 @@ impl ConditionallySelectable for WeierstrassPoint {
 impl Add for WeierstrassPoint {
     type Output = WeierstrassPoint;
 
+    /// Constant time (non-jacobian) short-Weierstrass combined affine addition and doubling
     fn add(self, rhs: Self) -> WeierstrassPoint {
-        // Non-jacobian short-Weierstrass affine addition (https://www.hyperelliptic.org/EFD/g1p/auto-shortw.html)
-        // x3 = (y2-y1)^2/(x2-x1)^2-x1-x2
-        // y3 = (2*x1+x2)*(y2-y1)/(x2-x1)-(y2-y1)^3/(x2-x1)^3-y1
-        //
-        // Modification:
-        // u = (y2-y1)/(x2-x1)
-        // x3 = u^2-x1-x2
-        // y3 = u*(x1-x3)-y1
-
-        if self.at_infinity().into() {
-            return rhs
-        } else if rhs.at_infinity().into() {
-            return self
-        }
-
-        if self.x_ct_eq(&rhs).into() {
-            if self.y_ct_eq(&rhs).into() {
-                return self.double()
-            } else {
-                return WeierstrassPoint::default()
-            }
-        }
+        // Formulas for affine addition/doubling: (https://www.hyperelliptic.org/EFD/g1p/auto-shortw.html)
+        // Note: Our usage of this function does not require efficiency, instead constant-time execution
 
         let x1 = FieldElement::from_bytes(&self.x);
         let y1 = FieldElement::from_bytes(&self.y);
@@ -219,9 +166,42 @@ impl Add for WeierstrassPoint {
         let x2 = FieldElement::from_bytes(&rhs.x);
         let y2 = FieldElement::from_bytes(&rhs.y);
 
-        let u = &(&y2 - &y1) * &(&x2 - &x1).invert();
-        let x3 = &(&u.square() - &x1) - &x2;
-        let y3 = &(&u * &(&x1 - &x3)) - &y1;
+        let x1s = x1.square();
+        let x1s3 = &(&x1s + &x1s) + &x1s;
+        let a = FieldElement::from_bytes(&WEI25519_A);
+
+        // s = (3*x1^2+a)/(2*y1)
+        let s = &(&x1s3 + &a) * &(&y1 + &y1).invert();
+
+        // r = (y2-y1)/(x2-x1)
+        let r = &(&y2 - &y1) * &(&x2 - &x1).invert();
+
+        // if x1 = x2 AND y1 = y2: u:=s else: u:=r
+        let mut x_eq = self.x_ct_eq(&rhs);
+        let y_eq = self.y_ct_eq(&rhs);
+        let mut u = r;
+        u.conditional_assign(&s, x_eq & y_eq);
+
+        // x3 = u^2-x1-x2
+        let mut x3 = &(&u.square() - &x1) - &x2;
+
+        // y3 = u*(x1-x3)-y1
+        let mut y3 = &(&u * &(&x1 - &x3)) - &y1;
+
+        // if (x1, y1) = 0: return (x2, y2)
+        let at_infinity1 = self.at_infinity();
+        x3.conditional_assign(&x2, at_infinity1);
+        y3.conditional_assign(&y2, at_infinity1);
+
+        // if (x2, y2) = 0: return (x1, y1)
+        let at_infinity2 = rhs.at_infinity() & !at_infinity1;
+        x3.conditional_assign(&x1, at_infinity2);
+        y3.conditional_assign(&y1, at_infinity2);
+
+        // if x1 = x2 AND y1 != y2: return 0
+        x_eq &= !at_infinity1 & !at_infinity2 & !y_eq;
+        x3.conditional_assign(&FieldElement::zero(), x_eq);
+        y3.conditional_assign(&FieldElement::zero(), x_eq);
 
         WeierstrassPoint {
             x: x3.to_bytes(),
@@ -359,24 +339,6 @@ mod test {
 
     #[test]
     fn scalar_mul_matches_montgomery_scalar_mul() {
-        let mut s: [u8; 32] = [0; 32]; s[0] = 3;
-        let scalar = Scalar::from_bits(s);
-
-        let m = crate::constants::X25519_BASEPOINT;
-        let w = crate::constants::WEI25519_BASEPOINT;
-
-        let a = m * scalar;
-        let b = w * scalar;
-        println!("{:?}", w.x);
-
-        assert_eq!(
-            WeierstrassPoint::from_montgomery(a.0, [0; 32]).x,
-            b.x,
-        );
-    }
-
-    #[test]
-    fn test_scalar() {
         let mut csprng: OsRng = OsRng;
 
         let s: Scalar = Scalar::random(&mut csprng);
