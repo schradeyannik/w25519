@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-curve25519-dalek = { path = "curve25519-dalek", default-features = false, features = ["weierstrass"] }
+curve25519-dalek = { path = "../curve25519-dalek", default-features = false, features = ["weierstrass"] }
 
 [features]
 default = ["std", "u64_backend"]
