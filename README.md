@@ -36,9 +36,14 @@ let (a_u, a_v) = w25519_base_point(a.to_bytes());
 let b: Scalar = ..;
 let (b_u, b_v) = w25519_base_point(b.to_bytes());
 
-// Shared secret with k \in \{ a, b \}
-let (s1, _) = w25519(k, b_u, b_v);
-let s2 = x25519_dalek::x25519(k, b_u);
+// Shared secret derivation for A
+let (s1, _) = w25519(a, b_u, b_v);
+let s2 = x25519_dalek::x25519(a, b_u);
+assert_eq!(s1, s2);
+
+// Shared secret derivation for B
+let (s1, _) = w25519(b, a_u, a_v);
+let s2 = x25519_dalek::x25519(b, a_u);
 assert_eq!(s1, s2);
 ```
 
