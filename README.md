@@ -15,36 +15,57 @@ The Diffie-Hellman protocol works the same as it does for [X25519](https://www.r
 The X25519 base point with u:=9 (together with the fixed v-coordinate) is used.
 For interoperability with X25519 however, W25519 first needs to be used to generate the public values and both the u-coordinate and v-coordinate need to be exchanged.
 
-### Usage of Wei25519 and W25519
+### Usage of Wei25519
+Wei25519 supports point additions and scalar multiplications with the `WeierstrassPoint` type, as well as functions to switch between Weierstrass and Montgomery representation.
+
 ```toml
 [dependencies]
-w25519 = { .. }
 curve25519-dalek = { .. , features = ["weierstrass"] }
 ```
 
 ```rust
-use w25519::{w25519, w25519_base_point};
 use curve25519_dalek::weierstrass;
 use curve25519_dalek::constants::WEI25519_BASEPOINT;
+```
 
-// Bare minimum W25519 <-> X25519 Diffie-Hellman key exchange
-// A generates a, (a_u, a_v) and shares (a_u, a_v) with B
-let a: Scalar = ..;
-let (a_u, a_v) = w25519_base_point(a.to_bytes());
+### Usage of W25519
+```toml
+[dependencies]
+w25519 = { .. }
+x25519-dalek = { .. } # Only add if you require both W25519 and X25519
+```
 
-// B generates b, (b_u, b_v) and shares (b_u, b_v) with A
-let b: Scalar = ..;
-let (b_u, b_v) = w25519_base_point(b.to_bytes());
+#### Wrapped DH
+The wrapped Diffie-Hellman interfaces are similar to the ones provided by `x25519-dalek`. Both the `x25519-dalek` and `w25519` DH functions return the `x25519-dalek::SharedSecret` type (Montgomery u-coordinate).
+To switch from W25519 to X25519, the `w25519::PublicKey` type provides the function `to_x25519_public_key`.
 
-// Shared secret derivation for A
-let (s1, _) = w25519(a, b_u, b_v);
-let s2 = x25519_dalek::x25519(a, b_u);
-assert_eq!(s1, s2);
+#### Bare minimum DH
+The bare minimum W25519 DH can be used as follows for a key exchange between Alice and Bob.
 
-// Shared secret derivation for B
-let (s1, _) = w25519(b, a_u, a_v);
-let s2 = x25519_dalek::x25519(b, a_u);
-assert_eq!(s1, s2);
+Alice generates random 32-bytes `a_secret`, computes and transmitts `a_u`, `a_v` to Bob.
+```rust
+let a_secret: [u8; 32] = ..;
+let (a_u, a_v) = w25519_base_point(a_secret);
+```
+
+Bob generates random 32-bytes `b_secret`, computes and transmitts `b_u`, `b_v` to Alice.
+```rust
+let b_secret: [u8; 32] = ..;
+let (b_u, b_v) = w25519_base_point(b_secret);
+```
+
+Alice can now derive the shared secret using `w25519` or `x25519`.
+```rust
+let (shared_secret, _) = w25519(a_secret, b_u, b_v);
+let shared_secret2 = x25519_dalek::x25519(a_secret, b_u);
+assert_eq!(shared_secret, shared_secret2);
+```
+
+Bob can now also derive the shared secret using `w25519` or `x25519`.
+```rust
+let (shared_secret, _) = w25519(b_secret, a_u, a_v);
+let shared_secret2 = x25519_dalek::x25519(b_secret, a_u);
+assert_eq!(shared_secret, shared_secret2);
 ```
 
 ### Dalek Cryptography Crates
