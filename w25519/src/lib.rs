@@ -1,6 +1,6 @@
 #![no_std]
 
-// extern crate curve25519_dalek;
+extern crate curve25519_dalek;
 
 mod w25519;
 

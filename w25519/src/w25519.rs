@@ -1,4 +1,4 @@
-/*use curve25519_dalek::weierstrass::*;//{WeierstrassPoint, X25519_BASEPOINT_U, X25519_BASEPOINT_V};
+use curve25519_dalek::weierstrass::{WeierstrassPoint, X25519_BASEPOINT_U, X25519_BASEPOINT_V};
 use curve25519_dalek::scalar::Scalar;
 use x25519_dalek::clamp_scalar;
 
@@ -10,4 +10,15 @@ pub fn w25519(k: [u8; 32], u: [u8; 32], v: [u8; 32]) -> ([u8; 32], [u8; 32]) {
 }
 
 pub const W25519_BASEPOINT_BYTES_U: [u8; 32] = X25519_BASEPOINT_U;
-pub const W25519_BASEPOINT_BYTES_V: [u8; 32] = X25519_BASEPOINT_V;*/
+pub const W25519_BASEPOINT_BYTES_V: [u8; 32] = X25519_BASEPOINT_V;
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    #[ignore]
+    fn w25519_matches_x25519() {
+        todo!()
+    }
+}
