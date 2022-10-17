@@ -1,8 +1,7 @@
 use curve25519_dalek::constants::WEI25519_BASEPOINT;
 use curve25519_dalek::weierstrass::{WeierstrassPoint, X25519_BASEPOINT_U, X25519_BASEPOINT_V};
 use curve25519_dalek::scalar::Scalar;
-use curve25519_dalek::traits::IsIdentity;
-use x25519_dalek::clamp_scalar;
+use x25519_dalek::{clamp_scalar, SharedSecret};
 
 use rand_core::CryptoRng;
 use rand_core::RngCore;
@@ -37,6 +36,10 @@ impl PublicKey {
     pub fn to_bytes(&self) -> [u8; 64] {
         self.0.to_bytes()
     }
+
+    pub fn to_x25519_public_key(&self) -> x25519_dalek::PublicKey {
+        x25519_dalek::PublicKey::from(self.0.into_montgomery_compressed().0)
+    }
 }
 
 /// A short-lived Diffie-Hellman secret key that can only be used to compute a single
@@ -55,7 +58,7 @@ impl EphemeralSecret {
     /// Perform a Diffie-Hellman key agreement between `self` and
     /// `their_public` key to produce a [`SharedSecret`].
     pub fn diffie_hellman(self, their_public: &PublicKey) -> SharedSecret {
-        SharedSecret(self.0 * their_public.0)
+        SharedSecret::new((self.0 * their_public.0).into_montgomery_compressed())
     }
 
     /// Generate an w25519 [`EphemeralSecret`] key.
@@ -103,7 +106,7 @@ impl ReusableSecret {
     /// Perform a Diffie-Hellman key agreement between `self` and
     /// `their_public` key to produce a [`SharedSecret`].
     pub fn diffie_hellman(&self, their_public: &PublicKey) -> SharedSecret {
-        SharedSecret(&self.0 * their_public.0)
+        SharedSecret::new((&self.0 * their_public.0).into_montgomery_compressed())
     }
 
     /// Generate a non-serializeable x25519 [`ReuseableSecret`] key.
@@ -153,7 +156,7 @@ impl StaticSecret {
     /// Perform a Diffie-Hellman key agreement between `self` and
     /// `their_public` key to produce a `SharedSecret`.
     pub fn diffie_hellman(&self, their_public: &PublicKey) -> SharedSecret {
-        SharedSecret(&self.0 * their_public.0)
+        SharedSecret::new((&self.0 * their_public.0).into_montgomery_compressed())
     }
 
     /// Generate an w25519 key.
@@ -169,6 +172,10 @@ impl StaticSecret {
     pub fn to_bytes(&self) -> [u8; 32] {
         self.0.to_bytes()
     }
+
+    pub fn to_x25519_static_secret(&self) -> x25519_dalek::StaticSecret {
+        x25519_dalek::StaticSecret::from(self.to_bytes())
+    }
 }
 
 impl From<[u8; 32]> for StaticSecret {
@@ -182,60 +189,6 @@ impl<'a> From<&'a StaticSecret> for PublicKey {
     /// Given an w25519 [`StaticSecret`] key, compute its corresponding [`PublicKey`].
     fn from(secret: &'a StaticSecret) -> PublicKey {
         PublicKey(&WEI25519_BASEPOINT * &secret.0)
-    }
-}
-
-/// The result of a Diffie-Hellman key exchange.
-///
-/// Each party computes this using their [`EphemeralSecret`] or [`StaticSecret`] and their
-/// counterparty's [`PublicKey`].
-#[derive(Zeroize)]
-#[zeroize(drop)]
-pub struct SharedSecret(pub(crate) WeierstrassPoint);
-
-impl SharedSecret {
-    /// Convert this shared secret to a byte array.
-    #[inline]
-    pub fn to_bytes(&self) -> [u8; 64] {
-        self.0.to_bytes()
-    }
-
-    /// Ensure in constant-time that this shared secret did not result from a
-    /// key exchange with non-contributory behaviour.
-    ///
-    /// In some more exotic protocols which need to guarantee "contributory"
-    /// behaviour for both parties, that is, that each party contibuted a public
-    /// value which increased the security of the resulting shared secret.
-    /// To take an example protocol attack where this could lead to undesireable
-    /// results [from Thái "thaidn" Dương](https://vnhacker.blogspot.com/2015/09/why-not-validating-curve25519-public.html):
-    ///
-    /// > If Mallory replaces Alice's and Bob's public keys with zero, which is
-    /// > a valid Curve25519 public key, he would be able to force the ECDH
-    /// > shared value to be zero, which is the encoding of the point at infinity,
-    /// > and thus get to dictate some publicly known values as the shared
-    /// > keys. It still requires an active man-in-the-middle attack to pull the
-    /// > trick, after which, however, not only Mallory can decode Alice's data,
-    /// > but everyone too! It is also impossible for Alice and Bob to detect the
-    /// > intrusion, as they still share the same keys, and can communicate with
-    /// > each other as normal.
-    ///
-    /// The original Curve25519 specification argues that checks for
-    /// non-contributory behaviour are "unnecessary for Diffie-Hellman".
-    /// Whether this check is necessary for any particular given protocol is
-    /// often a matter of debate, which we will not re-hash here, but simply
-    /// cite some of the [relevant] [public] [discussions].
-    ///
-    /// # Returns
-    ///
-    /// Returns `true` if the key exchange was contributory (good), and `false`
-    /// otherwise (can be bad for some protocols).
-    ///
-    /// [relevant]: https://tools.ietf.org/html/rfc7748#page-15
-    /// [public]: https://vnhacker.blogspot.com/2015/09/why-not-validating-curve25519-public.html
-    /// [discussions]: https://vnhacker.blogspot.com/2016/08/the-internet-of-broken-protocols.html
-    #[must_use]
-    pub fn was_contributory(&self) -> bool {
-        !self.0.is_identity()
     }
 }
 
@@ -272,18 +225,45 @@ mod test {
     }
 
     #[test]
+    fn to_x25519_public_key() {
+        let csprng: OsRng = OsRng;
+
+        let secret = StaticSecret::new(csprng);
+        let pubkey = PublicKey::from(&secret);
+
+        let x25519_pubkey = pubkey.to_x25519_public_key();
+
+        assert_eq!(
+            pubkey.0.into_montgomery_compressed().0,
+            x25519_pubkey.to_bytes()
+        );
+    }
+
+    #[test]
     fn w25519_x25519_dh_key_exchange() {
-        let mut csprng: OsRng = OsRng;
+        let csprng: OsRng = OsRng;
 
-        let a_secret = StaticSecret::new(csprng);
-        let a_pubkey = PublicKey::from(&a_secret);
+        let a_secret_w = StaticSecret::new(csprng);
+        let a_pubkey_w = PublicKey::from(&a_secret_w);
 
-        let b_secret = StaticSecret::new(csprng);
-        let b_pubkey = PublicKey::from(&b_secret);
+        let b_secret_w = StaticSecret::new(csprng);
+        let b_pubkey_w = PublicKey::from(&b_secret_w);
 
-        let w_shared_a = a_secret.diffie_hellman(&b_pubkey);
-        let w_shared_b = b_secret.diffie_hellman(&a_pubkey);
+        let a_shared_w = a_secret_w.diffie_hellman(&b_pubkey_w);
+        let b_shared_w = b_secret_w.diffie_hellman(&a_pubkey_w);
 
-        assert_eq!(shared_a.0, shared_b.0);
+        assert_eq!(a_shared_w.to_bytes(), b_shared_w.to_bytes());
+
+        let a_secret_x = a_secret_w.to_x25519_static_secret();
+        let a_pubkey_x = x25519_dalek::PublicKey::from(&a_secret_x);
+
+        let b_secret_x = b_secret_w.to_x25519_static_secret();
+        let b_pubkey_x = x25519_dalek::PublicKey::from(&b_secret_x);
+
+        let a_shared_x = a_secret_x.diffie_hellman(&b_pubkey_x);
+        let b_shared_x = b_secret_x.diffie_hellman(&a_pubkey_x);
+
+        assert_eq!(a_shared_x.to_bytes(), a_shared_w.to_bytes());
+        assert_eq!(a_shared_x.to_bytes(), b_shared_x.to_bytes());
     }
 }

@@ -215,6 +215,11 @@ impl<'a> From<&'a StaticSecret> for PublicKey {
 pub struct SharedSecret(pub(crate) MontgomeryPoint);
 
 impl SharedSecret {
+    #[cfg(feature = "constructable_secrets")]
+    pub fn new(shared_secret: MontgomeryPoint) -> Self {
+        SharedSecret(shared_secret)
+    }
+
     /// Convert this shared secret to a byte array.
     #[inline]
     pub fn to_bytes(&self) -> [u8; 32] {
