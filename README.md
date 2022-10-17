@@ -23,9 +23,23 @@ curve25519-dalek = { .. , features = ["weierstrass"] }
 ```
 
 ```rust
-use w25519;
+use w25519::{w25519, w25519_base_point};
 use curve25519_dalek::weierstrass;
 use curve25519_dalek::constants::WEI25519_BASEPOINT;
+
+// Bare minimum W25519 <-> X25519 Diffie-Hellman key exchange
+// A generates a, (a_u, a_v) and shares (a_u, a_v) with B
+let a: Scalar = ..;
+let (a_u, a_v) = w25519_base_point(a.to_bytes());
+
+// B generates b, (b_u, b_v) and shares (b_u, b_v) with A
+let b: Scalar = ..;
+let (b_u, b_v) = w25519_base_point(b.to_bytes());
+
+// Shared secret with k \in \{ a, b \}
+let (s1, _) = w25519(k, b_u, b_v);
+let s2 = x25519_dalek::x25519(k, b_u);
+assert_eq!(s1, s2);
 ```
 
 ### Dalek Cryptography Crates
