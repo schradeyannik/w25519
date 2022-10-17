@@ -16,9 +16,17 @@ pub const W25519_BASEPOINT_BYTES_V: [u8; 32] = X25519_BASEPOINT_V;
 mod test {
     use super::*;
 
+    use rand_core::OsRng;
+    use x25519_dalek::x25519;
+
     #[test]
-    #[ignore]
     fn w25519_matches_x25519() {
-        todo!()
+        let mut csprng: OsRng = OsRng;
+
+        let k: Scalar = Scalar::random(&mut csprng);
+        let (u, _) = w25519(k.to_bytes(), W25519_BASEPOINT_BYTES_U, W25519_BASEPOINT_BYTES_V);
+        let expected = x25519(k.to_bytes(), W25519_BASEPOINT_BYTES_U);
+
+        assert_eq!(u, expected);
     }
 }
