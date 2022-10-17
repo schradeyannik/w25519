@@ -1,11 +1,12 @@
 // -*- mode: rust; -*-
 //
 // This file is part of curve25519-dalek.
-// Copyright (c) 2016-2019 Isis Lovecruft, Henry de Valence
+// Copyright (c) 2016-2021 isis lovecruft
+// Copyright (c) 2016-2019 Henry de Valence
 // See LICENSE for licensing information.
 //
 // Authors:
-// - Isis Agora Lovecruft <isis@patternsinthevoid.net>
+// - isis agora lovecruft <isis@patternsinthevoid.net>
 // - Henry de Valence <hdevalence@hdevalence.ca>
 
 //! Various constants, such as the Ristretto and Ed25519 basepoints.
@@ -31,11 +32,12 @@ use edwards::CompressedEdwardsY;
 use ristretto::RistrettoPoint;
 use ristretto::CompressedRistretto;
 use montgomery::MontgomeryPoint;
-#[cfg(feature = "weierstrass")]
-use weierstrass::{WeierstrassPoint, WEI25519_G_X, WEI25519_G_Y};
-
 use scalar::Scalar;
 
+#[cfg(feature = "fiat_u32_backend")]
+pub use backend::serial::fiat_u32::constants::*;
+#[cfg(feature = "fiat_u64_backend")]
+pub use backend::serial::fiat_u64::constants::*;
 #[cfg(feature = "u64_backend")]
 pub use backend::serial::u64::constants::*;
 #[cfg(feature = "u32_backend")]
@@ -59,12 +61,6 @@ pub const X25519_BASEPOINT: MontgomeryPoint =
                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-
-#[cfg(feature = "weierstrass")]
-pub const WEI25519_BASEPOINT: WeierstrassPoint = WeierstrassPoint {
-    x: WEI25519_G_X,
-    y: WEI25519_G_Y,
-};
 
 /// The Ristretto basepoint, in `CompressedRistretto` format.
 pub const RISTRETTO_BASEPOINT_COMPRESSED: CompressedRistretto =

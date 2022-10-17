@@ -30,7 +30,7 @@ use curve25519_dalek::constants::WEI25519_BASEPOINT;
 
 ### Dalek Cryptography Crates
 Forked versions of Dalek Crypto crates:
-- `curve25519-dalek` [release 3.0.0](https://github.com/dalek-cryptography/curve25519-dalek/releases/tag/3.0.0)
+- `curve25519-dalek` [release 3.2.1](https://github.com/dalek-cryptography/curve25519-dalek/releases/tag/3.2.1)
 - `x25519-dalek` [release 1.2.0](https://github.com/dalek-cryptography/x25519-dalek/releases/tag/1.2.0)
 
 ### References
