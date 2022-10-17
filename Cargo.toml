@@ -2,4 +2,5 @@
 members = [
     "curve25519-dalek",
     "x25519-dalek",
+    "w25519",
 ]
