@@ -274,7 +274,7 @@ impl SharedSecret {
 /// # Returns
 ///
 /// A `Scalar`.
-fn clamp_scalar(mut scalar: [u8; 32]) -> Scalar {
+pub fn clamp_scalar(mut scalar: [u8; 32]) -> Scalar {
     scalar[0] &= 248;
     scalar[31] &= 127;
     scalar[31] |= 64;
