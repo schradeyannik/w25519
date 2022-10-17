@@ -173,50 +173,6 @@ impl WeierstrassPoint {
     pub fn double(&self) -> WeierstrassPoint {
         *self + *self
     }
-
-    /// Adds two short-Weierstrass points in non-constant time
-    /// 
-    /// # Warning
-    /// Do not use this function unless you don't require side-channel-attack resistance.
-    pub fn add_not_constant_time(&self, rhs: &WeierstrassPoint) -> WeierstrassPoint {
-        // Non-jacobian short-Weierstrass affine addition (https://www.hyperelliptic.org/EFD/g1p/auto-shortw.html)
-        // x3 = (y2-y1)^2/(x2-x1)^2-x1-x2
-        // y3 = (2*x1+x2)*(y2-y1)/(x2-x1)-(y2-y1)^3/(x2-x1)^3-y1
-        //
-        // Modification:
-        // u = (y2-y1)/(x2-x1)
-        // x3 = u^2-x1-x2
-        // y3 = u*(x1-x3)-y1
-
-        if self.at_infinity().into() {
-            return *rhs
-        } else if rhs.at_infinity().into() {
-            return *self
-        }
-
-        if self.x_ct_eq(rhs).into() {
-            if self.y_ct_eq(rhs).into() {
-                return self.double()
-            } else {
-                return WeierstrassPoint::default()
-            }
-        }
-
-        let x1 = FieldElement::from_bytes(&self.x);
-        let y1 = FieldElement::from_bytes(&self.y);
-
-        let x2 = FieldElement::from_bytes(&rhs.x);
-        let y2 = FieldElement::from_bytes(&rhs.y);
-
-        let u = &(&y2 - &y1) * &(&x2 - &x1).invert();
-        let x3 = &(&u.square() - &x1) - &x2;
-        let y3 = &(&u * &(&x1 - &x3)) - &y1;
-
-        WeierstrassPoint {
-            x: x3.to_bytes(),
-            y: y3.to_bytes(),
-        }
-    }
 }
 
 impl ConstantTimeEq for WeierstrassPoint {
@@ -358,6 +314,94 @@ impl<'a, 'b> Mul<&'b WeierstrassPoint> for &'a Scalar {
     }
 }
 
+#[cfg(feature = "weierstrass_non_constant_time")]
+/// Non-constant time group operations
+impl WeierstrassPoint {
+    /// Adds two short-Weierstrass points in non-constant time
+    /// 
+    /// # Warning
+    /// Do not use this function unless you don't require side-channel-attack resistance and prefer efficiency.
+    pub fn add_not_constant(&self, rhs: &WeierstrassPoint) -> WeierstrassPoint {
+        if self.at_infinity().into() {
+            return *rhs
+        } else if rhs.at_infinity().into() {
+            return *self
+        }
+
+        if self.x_ct_eq(rhs).into() {
+            if self.y_ct_eq(rhs).into() {
+                return self.double_not_constant()
+            } else {
+                return WeierstrassPoint::default()
+            }
+        }
+
+        let x1 = FieldElement::from_bytes(&self.x);
+        let y1 = FieldElement::from_bytes(&self.y);
+
+        let x2 = FieldElement::from_bytes(&rhs.x);
+        let y2 = FieldElement::from_bytes(&rhs.y);
+
+        let u = &(&y2 - &y1) * &(&x2 - &x1).invert();
+        let x3 = &(&u.square() - &x1) - &x2;
+        let y3 = &(&u * &(&x1 - &x3)) - &y1;
+
+        WeierstrassPoint {
+            x: x3.to_bytes(),
+            y: y3.to_bytes(),
+        }
+    }
+
+    /// Doubles a short-Weierstrass point in non-constant time
+    /// 
+    /// # Warning
+    /// Do not use this function unless you don't require side-channel-attack resistance and prefer efficiency.
+    pub fn double_not_constant(&self) -> WeierstrassPoint {
+        if self.at_infinity().into() {
+            return *self
+        }
+
+        let x1 = FieldElement::from_bytes(&self.x);
+        let y1 = FieldElement::from_bytes(&self.y);
+
+        let x1s = x1.square();
+        let x1s3 = &(&x1s + &x1s) + &x1s;
+        let a = FieldElement::from_bytes(&WEI25519_A);
+
+        // s = (3*x1^2+a)/(2*y1)
+        let s = &(&x1s3 + &a) * &(&y1 + &y1).invert();
+
+        let x3 = &(&s.square() - &x1) - &x1;
+        let y3 = &(&s * &(&x1 - &x3)) - &y1;
+
+        WeierstrassPoint {
+            x: x3.to_bytes(),
+            y: y3.to_bytes(),
+        }
+    }
+
+    /// Scalar multiplication of a short-Weierstrass point in non-constant time
+    /// 
+    /// # Warning
+    /// Do not use this function unless you don't require side-channel-attack resistance and prefer efficiency.
+    pub fn mul_not_constant(&self, scalar: &Scalar) -> WeierstrassPoint {
+        let mut acc = WeierstrassPoint::default();
+        let mut p = *self;
+
+        let bits: [i8; 256] = scalar.bits();
+
+        for bit in bits {
+            if bit == 1 {
+                acc += p;
+            }
+
+            p = p.double();
+        }
+
+        acc
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -424,7 +468,7 @@ mod test {
     }
 
     #[test]
-    fn test_map_point_at_infinity() {
+    fn map_point_at_infinity() {
         let w = WeierstrassPoint::default();
         assert_eq!(w.into_montgomery_compressed().0, [0; 32]);
 
@@ -439,12 +483,26 @@ mod test {
         let mut csprng: OsRng = OsRng;
 
         let s: Scalar = Scalar::random(&mut csprng);
-        let p_montgomery: MontgomeryPoint = crate::constants::X25519_BASEPOINT;
-        let p_weierstrass: WeierstrassPoint = crate::constants::WEI25519_BASEPOINT;
+        let p_montgomery = crate::constants::X25519_BASEPOINT;
+        let p_weierstrass = crate::constants::WEI25519_BASEPOINT;
 
         let result = s * p_weierstrass;
         let expected = s * p_montgomery;
 
         assert_eq!(result.into_montgomery_compressed(), expected);
+    }
+
+    #[cfg(feature = "weierstrass_non_constant_time")]
+    #[test]
+    fn not_constant_time_mul_matches_mul() {
+        let mut csprng: OsRng = OsRng;
+
+        let s: Scalar = Scalar::random(&mut csprng);
+        let p = crate::constants::WEI25519_BASEPOINT;
+
+        let result = p.mul_not_constant(&s);
+        let expected = s * p;
+
+        assert_eq!(result, expected);
     }
 }

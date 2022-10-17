@@ -60,6 +60,9 @@ std = ["alloc", "subtle/std", "rand_core/std"]
 alloc = ["zeroize/alloc"]
 weierstrass = []
 
+# Adds non-constant-time functions to `WeierstrassPoint`
+weierstrass_non_constant_time = []
+
 # The u32 backend uses u32s with u64 products.
 u32_backend = []
 # The u64 backend uses u64s with u128 products.
