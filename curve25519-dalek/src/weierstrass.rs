@@ -5,11 +5,15 @@ use core::ops::{Add, AddAssign, BitAndAssign, Mul, MulAssign};
 use field::FieldElement;
 use scalar::Scalar;
 
+use traits::Identity;
+
 use subtle::Choice;
 use subtle::ConditionallySelectable;
 use subtle::ConstantTimeEq;
 
 use montgomery::MontgomeryPoint;
+
+use zeroize::Zeroize;
 
 // 'a' parameter for Wei25519
 // https://datatracker.ietf.org/doc/html/draft-ietf-lwig-curve-representations-23#appendix-E.3
@@ -51,6 +55,20 @@ pub struct WeierstrassPoint {
     pub y: [u8; 32],
 }
 
+impl From<[u8; 64]> for WeierstrassPoint {
+    #[allow(clippy::manual_memcpy)]
+    fn from(bytes: [u8; 64]) -> WeierstrassPoint {
+        let mut x = [0; 32];
+        let mut y = [0; 32];
+        for i in 0..32 {
+            x[i] = bytes[i];
+            y[i] = bytes[i + 32];
+        }
+
+        WeierstrassPoint { x, y, }
+    }
+}
+
 impl Default for WeierstrassPoint {
     fn default() -> Self {
         WeierstrassPoint {
@@ -66,7 +84,33 @@ impl PartialEq for WeierstrassPoint {
     }
 }
 
+impl Eq for WeierstrassPoint {}
+
+impl Identity for WeierstrassPoint {
+    fn identity() -> WeierstrassPoint {
+        WeierstrassPoint::default()
+    }
+}
+
+impl Zeroize for WeierstrassPoint {
+    fn zeroize(&mut self) {
+        self.x.zeroize();
+        self.y.zeroize();
+    }
+}
+
 impl WeierstrassPoint {
+    /// Convert this `WeierstrassPoint` to an array of bytes.
+    #[allow(clippy::manual_memcpy)]
+    pub fn to_bytes(&self) -> [u8; 64] {
+        let mut b = [0; 64];
+        for i in 0..32 {
+            b[i] = self.x[i];
+            b[i + 32] = self.y[i];
+        }
+        b
+    }
+
     fn x_ct_eq(&self, other: &Self) -> Choice {
         FieldElement::from_bytes(&self.x)
             .ct_eq(&FieldElement::from_bytes(&other.x))
