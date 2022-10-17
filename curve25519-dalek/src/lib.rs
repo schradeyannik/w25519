@@ -291,6 +291,10 @@ pub mod scalar;
 // Point operations on the Montgomery form of Curve25519
 pub mod montgomery;
 
+#[cfg(feature = "weierstrass")]
+// Point operations on the Weierstrass form of Curve25519
+pub mod weierstrass;
+
 // Point operations on the Edwards form of Curve25519
 pub mod edwards;
 
