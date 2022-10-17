@@ -173,6 +173,50 @@ impl WeierstrassPoint {
     pub fn double(&self) -> WeierstrassPoint {
         *self + *self
     }
+
+    /// Adds two short-Weierstrass points in non-constant time
+    /// 
+    /// # Warning
+    /// Do not use this function unless you don't require side-channel-attack resistance.
+    pub fn add_not_constant_time(&self, rhs: &WeierstrassPoint) -> WeierstrassPoint {
+        // Non-jacobian short-Weierstrass affine addition (https://www.hyperelliptic.org/EFD/g1p/auto-shortw.html)
+        // x3 = (y2-y1)^2/(x2-x1)^2-x1-x2
+        // y3 = (2*x1+x2)*(y2-y1)/(x2-x1)-(y2-y1)^3/(x2-x1)^3-y1
+        //
+        // Modification:
+        // u = (y2-y1)/(x2-x1)
+        // x3 = u^2-x1-x2
+        // y3 = u*(x1-x3)-y1
+
+        if self.at_infinity().into() {
+            return *rhs
+        } else if rhs.at_infinity().into() {
+            return *self
+        }
+
+        if self.x_ct_eq(rhs).into() {
+            if self.y_ct_eq(rhs).into() {
+                return self.double()
+            } else {
+                return WeierstrassPoint::default()
+            }
+        }
+
+        let x1 = FieldElement::from_bytes(&self.x);
+        let y1 = FieldElement::from_bytes(&self.y);
+
+        let x2 = FieldElement::from_bytes(&rhs.x);
+        let y2 = FieldElement::from_bytes(&rhs.y);
+
+        let u = &(&y2 - &y1) * &(&x2 - &x1).invert();
+        let x3 = &(&u.square() - &x1) - &x2;
+        let y3 = &(&u * &(&x1 - &x3)) - &y1;
+
+        WeierstrassPoint {
+            x: x3.to_bytes(),
+            y: y3.to_bytes(),
+        }
+    }
 }
 
 impl ConstantTimeEq for WeierstrassPoint {
