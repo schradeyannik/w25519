@@ -1,5 +1,4 @@
-# elusiv-ecc
-[![CI](https://github.com/elusiv-privacy/elusiv-ecc/actions/workflows/test.yaml/badge.svg)](https://github.com/elusiv-privacy/elusiv-ecc/actions/workflows/test.yaml)
+# Curve25519 Weierstrass
 
 A pure-Rust constant-time implementation of group operations on Wei25519[^1], the short-Weierstrass representation Curve25519 isomorphism.
 
